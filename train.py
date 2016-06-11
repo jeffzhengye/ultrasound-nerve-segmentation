@@ -88,6 +88,27 @@ def preprocess(imgs):
     return imgs_p
 
 
+def k_fold_train(imgs_train, imgs_mask_train, n_fold=5):
+    from sklearn.cross_validation import KFold
+    kf = KFold(imgs_train.shape[0], n_folds=n_fold)
+    current = 0
+    for train_index, test_index in kf:
+        model = get_unet()
+        a_train_imgs = np.take(imgs_train, train_index, axis=0)
+        # print(imgs_train.shape)
+        # print(a_train_imgs.shape)
+        # raw_input()
+        # print(train_index)
+        a_train_mask = np.take(imgs_mask_train, train_index, axis=0)
+        a_valid_imgs = np.take(imgs_train, test_index, axis=0)
+        a_valid_mask = np.take(imgs_mask_train, test_index, axis=0)
+        model_checkpoint = ModelCheckpoint('unet_fold%s.hdf5' % current, monitor='val_loss', save_best_only=True)
+        model.fit(a_train_imgs, a_train_mask, validation_data=(a_valid_imgs, a_valid_mask),
+                  batch_size=32, nb_epoch=20, verbose=1, shuffle=True,
+                  callbacks=[model_checkpoint])
+        current += 1
+
+
 def train_and_predict():
     print('-'*30)
     print('Loading and preprocessing train data...')
@@ -108,16 +129,10 @@ def train_and_predict():
     imgs_mask_train /= 255.  # scale masks to [0, 1]
 
     print('-'*30)
-    print('Creating and compiling model...')
-    print('-'*30)
-    model = get_unet()
-    model_checkpoint = ModelCheckpoint('unet.hdf5', monitor='loss', save_best_only=True)
-
-    print('-'*30)
     print('Fitting model...')
     print('-'*30)
-    model.fit(imgs_train, imgs_mask_train, batch_size=32, nb_epoch=20, verbose=1, shuffle=True,
-              callbacks=[model_checkpoint])
+    n_fold = 5
+    k_fold_train(imgs_train, imgs_mask_train, n_fold=n_fold)
 
     print('-'*30)
     print('Loading and preprocessing test data...')
@@ -129,16 +144,20 @@ def train_and_predict():
     imgs_test -= mean
     imgs_test /= std
 
-    print('-'*30)
+    print('-' * 30)
     print('Loading saved weights...')
-    print('-'*30)
-    model.load_weights('unet.hdf5')
-
-    print('-'*30)
-    print('Predicting masks on test data...')
-    print('-'*30)
-    imgs_mask_test = model.predict(imgs_test, verbose=1)
-    np.save('imgs_mask_test.npy', imgs_mask_test)
+    print('-' * 30)
+    model = get_unet()
+    results = []
+    for i in range(n_fold):
+        model.load_weights('unet_fold%s.hdf5' % i)
+        print('-' * 30)
+        print('%s Predicting masks on test data...' % i)
+        print('-' * 30)
+        imgs_mask_test = model.predict(imgs_test, verbose=1)
+        results.append(imgs_mask_test)
+    imgs_mask_test = reduce(lambda x, y: x + y, results)/n_fold
+    np.save('imgs_mask_test_nfold.npy', imgs_mask_test)
 
 
 if __name__ == '__main__':
