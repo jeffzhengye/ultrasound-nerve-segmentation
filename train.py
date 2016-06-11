@@ -1,3 +1,8 @@
+try:
+    import gpuselect
+except:
+    print('gpuselect is not installed')
+
 from __future__ import print_function
 
 from PIL import Image
