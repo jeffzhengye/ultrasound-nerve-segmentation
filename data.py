@@ -1,9 +1,8 @@
 from __future__ import print_function
 
+from PIL import Image
 import os
 import numpy as np
-
-import cv2
 
 data_path = 'raw/'
 
@@ -27,8 +26,10 @@ def create_train_data():
         if 'mask' in image_name:
             continue
         image_mask_name = image_name.split('.')[0] + '_mask.tif'
-        img = cv2.imread(os.path.join(train_data_path, image_name), cv2.IMREAD_GRAYSCALE)
-        img_mask = cv2.imread(os.path.join(train_data_path, image_mask_name), cv2.IMREAD_GRAYSCALE)
+        img = Image.open(os.path.join(train_data_path, image_name))
+        img = img.convert('L')
+        img_mask = Image.open(os.path.join(train_data_path, image_mask_name))
+        img_mask = img_mask.convert('L')
 
         img = np.array([img])
         img_mask = np.array([img_mask])
