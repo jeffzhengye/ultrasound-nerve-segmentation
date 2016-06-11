@@ -1,17 +1,19 @@
 from __future__ import print_function
 
-import cv2
+from PIL import Image
 import numpy as np
 from keras.models import Model
 from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras import backend as K
+from keras.preprocessing.image import img_to_array
 
 from data import load_train_data, load_test_data
 
 img_rows = 64
 img_cols = 80
+target_size = (img_cols, img_rows)
 
 smooth = 1.
 
@@ -76,7 +78,9 @@ def get_unet():
 def preprocess(imgs):
     imgs_p = np.ndarray((imgs.shape[0], imgs.shape[1], img_rows, img_cols), dtype=np.uint8)
     for i in range(imgs.shape[0]):
-        imgs_p[i, 0] = cv2.resize(imgs[i, 0], (img_cols, img_rows), interpolation=cv2.INTER_CUBIC)
+        img = Image.fromarray(imgs[i, 0])
+        img = img.resize(target_size)
+        imgs_p[i, 0] = img_to_array(img, dim_ordering='th')
     return imgs_p
 
 
