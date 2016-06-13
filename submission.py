@@ -1,15 +1,19 @@
 from __future__ import print_function
 
 import numpy as np
-import cv2
+from PIL import Image
 from data import image_cols, image_rows
+from keras.preprocessing.image import img_to_array
 
 
 def prep(img):
     img = img.astype('float32')
-    img = cv2.threshold(img, 0.5, 1., cv2.THRESH_BINARY)[1].astype(np.uint8)
-    img = cv2.resize(img, (image_cols, image_rows))
-    return img
+    img = (img > 0.5).astype('float32')
+    img = Image.fromarray(img)
+
+    img = img.resize((image_cols, image_rows))
+    img_arr = img_to_array(img, dim_ordering='th')
+    return img_arr
 
 
 def run_length_enc(label):
@@ -19,10 +23,10 @@ def run_length_enc(label):
     if len(y) < 10:  # consider as empty
         return ''
     z = np.where(np.diff(y) > 1)[0]
-    start = np.insert(y[z+1], 0, y[0])
+    start = np.insert(y[z + 1], 0, y[0])
     end = np.append(y[z], y[-1])
     length = end - start
-    res = [[s+1, l+1] for s, l in zip(list(start), list(length))]
+    res = [[s + 1, l + 1] for s, l in zip(list(start), list(length))]
     res = list(chain.from_iterable(res))
     return ' '.join([str(r) for r in res])
 
@@ -30,7 +34,7 @@ def run_length_enc(label):
 def submission():
     from data import load_test_data
     imgs_test, imgs_id_test = load_test_data()
-    imgs_test = np.load('imgs_mask_test.npy')
+    imgs_test = np.load('imgs_mask_test_nfold.npy')
 
     argsort = np.argsort(imgs_id_test)
     imgs_id_test = imgs_id_test[argsort]
