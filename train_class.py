@@ -1,4 +1,5 @@
 from __future__ import print_function
+
 try:
     import gpuselect
 except:
@@ -7,16 +8,18 @@ except:
 from PIL import Image
 import numpy as np
 from keras.models import Model
-from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Flatten, Dense
+from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Flatten, Dense, Activation, Dropout
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras import backend as K
 from keras.preprocessing.image import img_to_array
+from keras.models import Sequential
 
 from data import load_train_data, load_test_data
 
 img_rows = 64
 img_cols = 80
+n_channel = 1
 target_size = (img_cols, img_rows)
 
 smooth = 1.
@@ -34,7 +37,7 @@ def dice_coef_loss(y_true, y_pred):
 
 
 def get_unet():
-    inputs = Input((1, img_rows, img_cols))
+    inputs = Input((n_channel, img_rows, img_cols))
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(conv1)
     pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
@@ -84,6 +87,42 @@ def get_unet():
     return model
 
 
+def get_keras_example_net():
+    # inputs = Input((n_channel, img_rows, img_cols))
+    model = Sequential()
+    model.add(Convolution2D(32, 3, 3, input_shape=(n_channel, img_cols, img_rows)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # model.add(Convolution2D(32, 3, 3))
+    # model.add(Activation('relu'))
+    # model.add(MaxPooling2D(pool_size=(2, 2)))
+    #
+    # model.add(Convolution2D(64, 3, 3))
+    # model.add(Activation('relu'))
+    # model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Convolution2D(64, 3, 3, activation='relu', border_mode='same'))
+    model.add(Convolution2D(64, 3, 3, activation='relu', border_mode='same'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # model.add(Convolution2D(128, 3, 3, activation='relu', border_mode='same'))
+    # model.add(Convolution2D(128, 3, 3, activation='relu', border_mode='same'))
+    # model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Flatten())
+    model.add(Dense(64))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(1))
+    model.add(Activation('sigmoid'))
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer='rmsprop',
+                  metrics=['accuracy'])
+    return model
+
+
 def preprocess(imgs):
     imgs_p = np.ndarray((imgs.shape[0], imgs.shape[1], img_rows, img_cols), dtype=np.uint8)
     for i in range(imgs.shape[0]):
@@ -98,22 +137,23 @@ def k_fold_train(imgs_train, imgs_mask_train, n_fold=5):
     kf = KFold(imgs_train.shape[0], n_folds=n_fold)
     current = 0
     for train_index, test_index in kf:
-        model = get_unet()
+        # model = get_unet()
+        model = get_keras_example_net()
         a_train_imgs = np.take(imgs_train, train_index, axis=0)
         a_train_mask = np.take(imgs_mask_train, train_index, axis=0)
         a_valid_imgs = np.take(imgs_train, test_index, axis=0)
         a_valid_mask = np.take(imgs_mask_train, test_index, axis=0)
         model_checkpoint = ModelCheckpoint('unet_fold%s.hdf5' % current, monitor='val_loss', save_best_only=True)
         model.fit(a_train_imgs, a_train_mask, validation_data=(a_valid_imgs, a_valid_mask),
-                  batch_size=32, nb_epoch=20, verbose=1, shuffle=True,
+                  batch_size=32, nb_epoch=5, verbose=1, shuffle=True,
                   callbacks=[model_checkpoint])
         current += 1
 
 
 def train_and_predict():
-    print('-'*30)
+    print('-' * 30)
     print('Loading and preprocessing train data...')
-    print('-'*30)
+    print('-' * 30)
     imgs_train, imgs_mask_train = load_train_data()
 
     imgs_train = preprocess(imgs_train)
@@ -129,18 +169,27 @@ def train_and_predict():
     imgs_mask_train = imgs_mask_train.astype('float32')
     imgs_mask_train /= 255.  # scale masks to [0, 1]
     y_hat_train = np.max(imgs_mask_train, axis=(1, 2, 3))
-    print(y_hat_train.shape)
+    print(y_hat_train.shape, np.unique(y_hat_train), np.sum(y_hat_train))
+    y_hat_train_sums = np.sum(imgs_mask_train, axis=(1, 2, 3))
+    y_hat_train_sums = np.nonzero(y_hat_train_sums)[0]
+    print(y_hat_train_sums.shape, np.min(y_hat_train_sums), np.max(y_hat_train_sums), np.mean(y_hat_train_sums))
+    y = np.bincount(y_hat_train_sums)
+    ii = np.nonzero(y)[0]
+    count = y[ii]
+    from matplotlib import pyplot as plt
+    plt.plot(ii, count)
+    plt.show()
     raw_input()
 
-    print('-'*30)
+    print('-' * 30)
     print('Fitting model...')
-    print('-'*30)
+    print('-' * 30)
     n_fold = 5
     k_fold_train(imgs_train, y_hat_train, n_fold=n_fold)
 
-    print('-'*30)
+    print('-' * 30)
     print('Loading and preprocessing test data...')
-    print('-'*30)
+    print('-' * 30)
     imgs_test, imgs_id_test = load_test_data()
     imgs_test = preprocess(imgs_test)
 
@@ -151,7 +200,8 @@ def train_and_predict():
     print('-' * 30)
     print('Loading saved weights...')
     print('-' * 30)
-    model = get_unet()
+    # model = get_unet()
+    model = get_keras_example_net()
     results = []
     for i in range(n_fold):
         model.load_weights('unet_fold%s.hdf5' % i)
@@ -160,7 +210,7 @@ def train_and_predict():
         print('-' * 30)
         imgs_mask_test = model.predict(imgs_test, verbose=1)
         results.append(imgs_mask_test)
-    imgs_mask_test = reduce(lambda x, y: x + y, results)/n_fold
+    imgs_mask_test = reduce(lambda x, y: x + y, results) / n_fold
     np.save('imgs_mask_test_nfold.npy', imgs_mask_test)
 
 
