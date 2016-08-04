@@ -90,7 +90,7 @@ def get_unet():
 def get_keras_example_net():
     # inputs = Input((n_channel, img_rows, img_cols))
     model = Sequential()
-    model.add(Convolution2D(32, 3, 3, input_shape=(n_channel, img_cols, img_rows)))
+    model.add(Convolution2D(32, 3, 3, input_shape=(n_channel, img_rows, img_cols)))
     model.add(Activation('relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
@@ -169,17 +169,20 @@ def train_and_predict():
     imgs_mask_train = imgs_mask_train.astype('float32')
     imgs_mask_train /= 255.  # scale masks to [0, 1]
     y_hat_train = np.max(imgs_mask_train, axis=(1, 2, 3))
-    print(y_hat_train.shape, np.unique(y_hat_train), np.sum(y_hat_train))
+    print("total:", y_hat_train.shape, np.unique(y_hat_train), "label-1:", np.sum(y_hat_train))
+
     y_hat_train_sums = np.sum(imgs_mask_train, axis=(1, 2, 3))
-    y_hat_train_sums = np.nonzero(y_hat_train_sums)[0]
+    print(y_hat_train_sums)
+    y_hat_train_sums_nonzero_ids = np.nonzero(y_hat_train_sums)[0]
+    y_hat_train_sums = y_hat_train_sums[y_hat_train_sums_nonzero_ids]
     print(y_hat_train_sums.shape, np.min(y_hat_train_sums), np.max(y_hat_train_sums), np.mean(y_hat_train_sums))
-    y = np.bincount(y_hat_train_sums)
-    ii = np.nonzero(y)[0]
-    count = y[ii]
-    from matplotlib import pyplot as plt
-    plt.plot(ii, count)
-    plt.show()
-    raw_input()
+    # y = np.bincount(y_hat_train_sums.astype('int32'))
+    # ii = np.nonzero(y)[0]
+    # count = y[ii]
+    # from matplotlib import pyplot as plt
+    # plt.plot(ii, count)
+    # plt.show()
+    # raw_input("pause, input any to continue")
 
     print('-' * 30)
     print('Fitting model...')
