@@ -9,6 +9,7 @@ from PIL import Image
 import numpy as np
 from keras.models import Model
 from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Flatten, Dense, Activation, Dropout
+from keras.preprocessing.image import ImageDataGenerator
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras import backend as K
@@ -21,8 +22,10 @@ img_rows = 64
 img_cols = 80
 n_channel = 1
 target_size = (img_cols, img_rows)
-
+batch_size = 64
+nb_epoch = 25
 smooth = 1.
+optimizer = Adam(1.e-4)
 
 
 def dice_coef(y_true, y_pred):
@@ -82,7 +85,7 @@ def get_unet():
 
     # model.compile(optimizer=Adam(lr=1e-5), loss=dice_coef_loss, metrics=[dice_coef])
     model.compile(loss='binary_crossentropy',
-                  optimizer='adam',
+                  optimizer=optimizer,
                   metrics=['accuracy'])
     return model
 
@@ -118,7 +121,41 @@ def get_keras_example_net():
     model.add(Activation('sigmoid'))
 
     model.compile(loss='binary_crossentropy',
-                  optimizer='rmsprop',
+                  optimizer=optimizer,
+                  metrics=['accuracy'])
+    return model
+
+
+def get_keras_mnist_cnn():
+    nb_classes = 1
+    # input image dimensions
+    # number of convolutional filters to use
+    nb_filters = 32
+    # size of pooling area for max pooling
+    nb_pool = 2
+    # convolution kernel size
+    nb_conv = 3
+    model = Sequential()
+    model.add(Convolution2D(nb_filters, nb_conv, nb_conv,
+                            border_mode='valid',
+                            input_shape=(1, img_rows, img_cols)))
+    model.add(Activation('relu'))
+    model.add(Convolution2D(nb_filters, nb_conv, nb_conv))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
+    model.add(Dropout(0.25))
+
+    model.add(Flatten())
+    model.add(Dense(128))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(nb_classes))
+    # model.add(Activation('softmax'))
+
+    model.add(Activation('sigmoid'))
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer=optimizer,
                   metrics=['accuracy'])
     return model
 
@@ -132,21 +169,42 @@ def preprocess(imgs):
     return imgs_p
 
 
-def k_fold_train(imgs_train, imgs_mask_train, n_fold=5):
+def k_fold_train(imgs_train, imgs_mask_train, n_fold=5, use_generator=True):
     from sklearn.cross_validation import KFold
     kf = KFold(imgs_train.shape[0], n_folds=n_fold)
     current = 0
     for train_index, test_index in kf:
         # model = get_unet()
         model = get_keras_example_net()
+        # model = get_keras_mnist_cnn()
+
         a_train_imgs = np.take(imgs_train, train_index, axis=0)
         a_train_mask = np.take(imgs_mask_train, train_index, axis=0)
         a_valid_imgs = np.take(imgs_train, test_index, axis=0)
         a_valid_mask = np.take(imgs_mask_train, test_index, axis=0)
         model_checkpoint = ModelCheckpoint('unet_fold%s.hdf5' % current, monitor='val_loss', save_best_only=True)
-        model.fit(a_train_imgs, a_train_mask, validation_data=(a_valid_imgs, a_valid_mask),
-                  batch_size=32, nb_epoch=5, verbose=1, shuffle=True,
-                  callbacks=[model_checkpoint])
+        if use_generator:
+            train_datagen = ImageDataGenerator(
+                rescale=1.,
+                shear_range=0.2,
+                zoom_range=0.2,
+                horizontal_flip=True)
+            test_datagen = ImageDataGenerator(rescale=1.)
+            train_generator = train_datagen.flow(a_train_imgs, a_train_mask, batch_size=batch_size)
+            validation_generator = test_datagen.flow(a_valid_imgs, a_valid_mask, batch_size=batch_size)
+            model.fit_generator(
+                train_generator,
+                samples_per_epoch=len(a_train_imgs),
+                validation_data=validation_generator,
+                nb_val_samples=len(a_valid_mask),
+                nb_epoch=nb_epoch, verbose=1,
+                callbacks=[model_checkpoint],
+            )
+
+        else:
+            model.fit(a_train_imgs, a_train_mask, validation_data=(a_valid_imgs, a_valid_mask),
+                      batch_size=batch_size, nb_epoch=nb_epoch, verbose=1, shuffle=True,
+                      callbacks=[model_checkpoint])
         current += 1
 
 
